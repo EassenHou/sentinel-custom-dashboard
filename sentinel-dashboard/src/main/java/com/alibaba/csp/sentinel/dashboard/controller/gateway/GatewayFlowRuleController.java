@@ -27,10 +27,12 @@ import com.alibaba.csp.sentinel.dashboard.domain.vo.gateway.rule.AddFlowRuleReqV
 import com.alibaba.csp.sentinel.dashboard.domain.vo.gateway.rule.GatewayParamFlowItemVo;
 import com.alibaba.csp.sentinel.dashboard.domain.vo.gateway.rule.UpdateFlowRuleReqVo;
 import com.alibaba.csp.sentinel.dashboard.repository.gateway.InMemGatewayFlowRuleStore;
+import com.alibaba.csp.sentinel.dashboard.rule.DynamicRulePublisher;
 import com.alibaba.csp.sentinel.util.StringUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
@@ -58,6 +60,10 @@ public class GatewayFlowRuleController {
 
     @Autowired
     private SentinelApiClient sentinelApiClient;
+
+    @Autowired
+    @Qualifier("gatewayFlowRuleNacosPublisher")
+    private DynamicRulePublisher<List<GatewayFlowRuleEntity>> rulePublisher;
 
     @GetMapping("/list.json")
     @AuthAction(AuthService.PrivilegeType.READ_RULE)
@@ -247,6 +253,14 @@ public class GatewayFlowRuleController {
             logger.warn("publish gateway flow rules fail after add");
         }
 
+        // 原有代码，发送流控规则更新客户端，比如这里是我的网关服务
+        if (!publishRules(app, entity.getIp(), entity.getPort())) {
+            logger.warn("publish gateway flow rules fail after update");
+        } else {
+            // 客户端成功，更新保存到nacos持久化
+            publishRules(app);
+        }
+
         return Result.ofSuccess(entity);
     }
 
@@ -393,9 +407,25 @@ public class GatewayFlowRuleController {
             logger.warn("publish gateway flow rules fail after update");
         }
 
+        // 原有代码，发送流控规则更新客户端，比如这里是我的网关服务
+        if (!publishRules(app, entity.getIp(), entity.getPort())) {
+            logger.warn("publish gateway flow rules fail after update");
+        } else {
+            // 客户端成功，更新保存到nacos持久化
+            publishRules(app);
+        }
+
         return Result.ofSuccess(entity);
     }
 
+    private void publishRules(String appName) {
+        List<GatewayFlowRuleEntity> rules = repository.findAllByApp(appName);
+        try {
+            rulePublisher.publish(appName, rules);
+        } catch (Exception e) {
+            logger.warn("public gateway flow rules to nacos fail");
+        }
+    }
 
     @PostMapping("/delete.json")
     @AuthAction(AuthService.PrivilegeType.DELETE_RULE)
@@ -419,6 +449,14 @@ public class GatewayFlowRuleController {
 
         if (!publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort())) {
             logger.warn("publish gateway flow rules fail after delete");
+        }
+
+        // 原有代码，发送流控规则更新客户端，比如这里是我的网关服务
+        if (!publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort())) {
+            logger.warn("publish gateway flow rules fail after update");
+        } else {
+            // 客户端成功，更新保存到nacos持久化
+            publishRules(oldEntity.getApp());
         }
 
         return Result.ofSuccess(id);
